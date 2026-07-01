@@ -6,10 +6,32 @@ import { PageHeader, Toolbar, Modal, Empty, Badge } from '../components/ui'
 import InvoicePrint from '../components/InvoicePrint'
 import InvoiceEdit from '../components/InvoiceEdit'
 import { Pagination, usePagination } from '../components/Pagination'
-import { inr, fmtDate, today, daysUntil, exportCSV } from '../lib/format'
+import { inr, num, fmtDate, today, daysUntil, exportCSV } from '../lib/format'
+import { buildPdf } from '../lib/pdf'
+import { useAuth } from '../lib/auth'
+
+function PdfButton({ onClick }) {
+  return (
+    <button
+      className="btn-ghost flex items-center gap-1.5"
+      onClick={onClick}
+      title="Export as PDF"
+    >
+      <svg className="w-3.5 h-3.5 text-rose-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+        <polyline points="14,2 14,8 20,8" />
+        <line x1="16" y1="13" x2="8" y2="13" />
+        <line x1="16" y1="17" x2="8" y2="17" />
+        <polyline points="10,9 9,9 8,9" />
+      </svg>
+      PDF
+    </button>
+  )
+}
 
 export default function SalesHistory() {
   const sales = useCollection('sales')
+  const { user, company } = useAuth()
   const [params, setParams] = useSearchParams()
   const [q, setQ] = useState('')
   const [from, setFrom] = useState('')
@@ -34,9 +56,51 @@ export default function SalesHistory() {
   const pg = usePagination(filtered, 10)
 
   const total = filtered.reduce((s, i) => s + Number(i.grandTotal || 0), 0)
+  const taxable = filtered.reduce((s, i) => s + Number(i.taxable || 0), 0)
+  const gst = filtered.reduce((s, i) => s + Number(i.gstTotal || 0), 0)
 
   // 1-day invoice edit limit: editable only on the day it was created.
   const editable = (inv) => daysUntil(inv.date) >= -1 && (inv.date || '').slice(0, 10) === today()
+
+  const exportPdf = () => {
+    const dateRangeLabel = () => {
+      if (!from && !to) return 'All dates'
+      if (from && to) return `${fmtDate(from)} – ${fmtDate(to)}`
+      if (from) return `From ${fmtDate(from)}`
+      return `Until ${fmtDate(to)}`
+    }
+
+    buildPdf({
+      title: 'Sales History Report',
+      subtitle: 'Chronological sales invoice history list',
+      company: company?.name,
+      generatedBy: user?.name,
+      dateRange: dateRangeLabel(),
+      kpis: [
+        { label: 'Invoices Count', value: num(filtered.length) },
+        { label: 'Total Taxable',  value: inr(taxable) },
+        { label: 'Total GST',      value: inr(gst) },
+        { label: 'Net Sales',      value: inr(total) },
+      ],
+      sections: [
+        {
+          heading: 'Invoice List',
+          type: 'table',
+          columns: [
+            { key: 'invoiceNo',    label: 'Invoice No.' },
+            { key: 'date',         label: 'Date',     value: (r) => fmtDate(r.date) },
+            { key: 'customerName', label: 'Customer' },
+            { key: 'payMode',      label: 'Pay Mode' },
+            { key: 'taxable',      label: 'Taxable',  align: 'right', value: (r) => inr(r.taxable) },
+            { key: 'gstTotal',     label: 'GST',      align: 'right', value: (r) => inr(r.gstTotal) },
+            { key: 'grandTotal',   label: 'Total',    align: 'right', value: (r) => inr(r.grandTotal) },
+          ],
+          rows: filtered,
+          totalRow: { invoiceNo: `${filtered.length} items`, taxable: inr(taxable), gstTotal: inr(gst), grandTotal: inr(total) },
+        }
+      ]
+    })
+  }
 
   return (
     <div>
@@ -45,6 +109,7 @@ export default function SalesHistory() {
           { key: 'invoiceNo', label: 'Invoice' }, { key: 'date', label: 'Date' }, { key: 'customerName', label: 'Customer' },
           { key: 'payMode', label: 'Pay Mode' }, { key: 'taxable', label: 'Taxable' }, { key: 'gstTotal', label: 'GST' }, { key: 'grandTotal', label: 'Total' },
         ])}>⬇ Excel</button>
+        <PdfButton onClick={exportPdf} />
         <Link to="/sales/new" className="btn-primary">+ New Invoice</Link>
       </>} />
 
