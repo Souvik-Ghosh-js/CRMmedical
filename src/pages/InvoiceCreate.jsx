@@ -1,14 +1,30 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useCollection } from '../lib/hooks'
 import * as db from '../lib/db'
 import { fefoBatches, deductFEFO, productStock } from '../lib/stock'
 import { logAudit } from '../lib/audit'
-import { PageHeader, Field, Badge } from '../components/ui'
+import { useAuth } from '../lib/auth'
+import { PageHeader, Field, Badge, Modal } from '../components/ui'
 import { inr, today } from '../lib/format'
+
+const CUSTOMER_TYPES = ['Walk-in', 'Registered', 'Corporate', 'Hospital']
+const BUSINESS_TYPES = ['Corporate', 'Hospital'] // these types unlock the GSTIN field
+const BLANK_CUSTOMER = { name: '', type: 'Walk-in', phone: '', gstin: '', address: '' }
+const STATUS_OPTIONS = ['Pending', 'Settled', 'Cancelled', 'Returned', 'Payment Issue']
+const SERIES_BY_TYPE = { Hospital: 'Hospital', Corporate: 'Wholesale' } // default (Walk-in/Registered) is Retail
+const SERIES_CODE = { Retail: 'RET', Wholesale: 'WS', Hospital: 'HOS' }
+
+// April–March Indian financial year for a given invoice date.
+function financialYear(dateStr) {
+  const d = new Date(dateStr)
+  const startYear = d.getMonth() >= 3 ? d.getFullYear() : d.getFullYear() - 1
+  return `${startYear}-${String((startYear + 1) % 100).padStart(2, '0')}`
+}
 
 export default function InvoiceCreate() {
   const nav = useNavigate()
+  const { user } = useAuth()
   const products = useCollection('products')
   const customers = useCollection('customers')
   const batches = useCollection('batches')
@@ -17,11 +33,20 @@ export default function InvoiceCreate() {
   const [customerId, setCustomerId] = useState(customers[0]?.id || '')
   const [date, setDate] = useState(today())
   const [payMode, setPayMode] = useState('Cash')
+  const [status, setStatus] = useState('Settled')
+  const [cardLast4, setCardLast4] = useState('')
+  const [cardTxnRef, setCardTxnRef] = useState('')
   const [discountPct, setDiscountPct] = useState(0)
   const [lines, setLines] = useState([])
   const [pick, setPick] = useState('')
+  const [showAddCustomer, setShowAddCustomer] = useState(false)
+  const [newCustomer, setNewCustomer] = useState(BLANK_CUSTOMER)
+
+  // Credit sales default to Pending until settled; everything else is paid at the counter.
+  useEffect(() => { setStatus(payMode === 'Credit' ? 'Pending' : 'Settled') }, [payMode])
 
   const customer = customers.find((c) => c.id === customerId)
+  const invoiceSeries = SERIES_BY_TYPE[customer?.type] || 'Retail'
   // Intra-state (same GST state code) → CGST+SGST; else IGST.
   const interState = customer?.gstin && company?.gstin && customer.gstin.slice(0, 2) !== company.gstin.slice(0, 2)
 
@@ -40,6 +65,20 @@ export default function InvoiceCreate() {
 
   const upd = (key, patch) => setLines((ls) => ls.map((l) => (l.key === key ? { ...l, ...patch } : l)))
   const del = (key) => setLines((ls) => ls.filter((l) => l.key !== key))
+
+  const saveNewCustomer = (e) => {
+    e.preventDefault()
+    const isBusiness = BUSINESS_TYPES.includes(newCustomer.type)
+    const id = `CUST-${db.nextNumber('customer', 4)}`
+    const c = db.insert('customers', {
+      id, name: newCustomer.name.trim(), type: newCustomer.type, phone: newCustomer.phone,
+      address: newCustomer.address, email: '', gstin: isBusiness ? newCustomer.gstin : '', balance: 0, doctor: '',
+    })
+    logAudit('Customer Create', `Added ${c.name} (${c.type}) from invoice screen`)
+    setCustomerId(c.id)
+    setNewCustomer(BLANK_CUSTOMER)
+    setShowAddCustomer(false)
+  }
 
   const calc = useMemo(() => {
     let taxable = 0, gstTotal = 0
@@ -68,20 +107,31 @@ export default function InvoiceCreate() {
     for (const l of calc.rows) {
       if (l.qty > l.available) return alert(`${l.name}: only ${l.available} in stock.`)
     }
-    const seq = db.nextNumber('invoice')
-    const invoiceNo = `INV-${new Date(date).getFullYear()}-${seq}`
-    // deduct stock FEFO and capture real batch allocations
-    const finalLines = calc.rows.map((l) => {
+    if (payMode === 'Card' && !cardLast4.trim()) return alert('Enter the last 4 digits of the card used.')
+    const seriesCode = SERIES_CODE[invoiceSeries]
+    const fy = financialYear(date)
+    const seq = db.nextNumber(`invoice-${seriesCode}`)
+    const invoiceNo = `${seriesCode}-${fy}-${seq}`
+    const branchId = company?.id || 'BR-01'
+    const posId = user?.username ? `POS-${user.username}` : 'POS-1'
+    const now = new Date().toISOString()
+    // Cancelled-at-creation invoices don't move stock or ledger balances.
+    const finalLines = status === 'Cancelled' ? calc.rows : calc.rows.map((l) => {
       const { allocations } = deductFEFO(l.productId, l.qty)
       return { ...l, allocations }
     })
     const inv = db.insert('sales', {
-      invoiceNo, date, customerId, customerName: customer?.name || 'Walk-in',
+      invoiceNo, date, customerId, customerName: customer?.name || 'Walk-in', customerType: customer?.type || 'Walk-in',
       customerGstin: customer?.gstin || '', payMode, interState: !!interState,
       lines: finalLines, ...calc, discountPct: Number(discountPct),
+      status, financialYear: fy, invoiceSeries, branchId, posId, createdAt: now, updatedAt: now,
+      ...(payMode === 'Card' ? { cardLast4: cardLast4.trim(), cardTxnRef: cardTxnRef.trim() } : {}),
     })
-    logAudit('Invoice Create', `${invoiceNo} ${inr(calc.grandTotal)} to ${customer?.name}`)
-    if (payMode === 'Credit' && customer) db.update('customers', customer.id, { balance: Number(customer.balance || 0) + calc.grandTotal })
+    logAudit('Invoice Create', `${invoiceNo} ${inr(calc.grandTotal)} to ${customer?.name} · ${status}`)
+    // Only outstanding (unsettled) credit invoices should add to the customer's owed balance.
+    if (payMode === 'Credit' && customer && ['Pending', 'Payment Issue'].includes(status)) {
+      db.update('customers', customer.id, { balance: Number(customer.balance || 0) + calc.grandTotal })
+    }
     nav(`/sales?open=${inv.id}`)
   }
 
@@ -92,9 +142,12 @@ export default function InvoiceCreate() {
       <form onSubmit={save}>
         <div className="card p-5 grid sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
           <Field label="Customer">
-            <select className="input" value={customerId} onChange={(e) => setCustomerId(e.target.value)}>
-              {customers.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-            </select>
+            <div className="flex gap-2">
+              <select className="input" value={customerId} onChange={(e) => setCustomerId(e.target.value)}>
+                {customers.map((c) => <option key={c.id} value={c.id}>{c.name}{c.type ? ` · ${c.type}` : ''}</option>)}
+              </select>
+              <button type="button" className="btn-ghost whitespace-nowrap" onClick={() => setShowAddCustomer(true)}>+ Add customer type</button>
+            </div>
           </Field>
           <Field label="Invoice Date"><input type="date" className="input" value={date} onChange={(e) => setDate(e.target.value)} /></Field>
           <Field label="Payment Mode">
@@ -103,6 +156,27 @@ export default function InvoiceCreate() {
             </select>
           </Field>
           <Field label="Bill Discount %"><input type="number" min="0" max="100" className="input" value={discountPct} onChange={(e) => setDiscountPct(e.target.value)} /></Field>
+          <Field label="Invoice Status *">
+            <select className="input" value={status} onChange={(e) => setStatus(e.target.value)}>
+              {STATUS_OPTIONS.map((s) => <option key={s}>{s}</option>)}
+            </select>
+          </Field>
+          {payMode === 'Card' && (
+            <>
+              <Field label="Card Last 4 Digits *">
+                <input required maxLength={4} className="input" placeholder="e.g. 4242" value={cardLast4} onChange={(e) => setCardLast4(e.target.value.replace(/\D/g, '').slice(0, 4))} />
+              </Field>
+              <Field label="Card Auth / Txn Ref No.">
+                <input className="input" placeholder="Approval / reference code" value={cardTxnRef} onChange={(e) => setCardTxnRef(e.target.value)} />
+              </Field>
+            </>
+          )}
+          <div className="sm:col-span-2 lg:col-span-4 text-xs text-slate-400 flex flex-wrap gap-x-4 gap-y-1 pt-2 mt-1 border-t border-slate-100">
+            <span>Series: <b className="text-slate-600">{invoiceSeries}</b></span>
+            <span>Financial Year: <b className="text-slate-600">{financialYear(date)}</b></span>
+            <span>Branch: <b className="text-slate-600">{company?.id || 'BR-01'}</b></span>
+            <span>Counter: <b className="text-slate-600">{user?.username ? `POS-${user.username}` : 'POS-1'}</b></span>
+          </div>
         </div>
 
         <div className="card p-5 mb-4">
@@ -164,6 +238,38 @@ export default function InvoiceCreate() {
           </div>
         </div>
       </form>
+
+      <Modal open={showAddCustomer} onClose={() => { setShowAddCustomer(false); setNewCustomer(BLANK_CUSTOMER) }} title="Add Customer Type">
+        <form onSubmit={saveNewCustomer} className="grid sm:grid-cols-2 gap-4">
+          <Field label="Customer Name *" className="sm:col-span-2">
+            <input required className="input" value={newCustomer.name} onChange={(e) => setNewCustomer((n) => ({ ...n, name: e.target.value }))} />
+          </Field>
+          <Field label="Customer Type *">
+            <select className="input" value={newCustomer.type} onChange={(e) => setNewCustomer((n) => ({ ...n, type: e.target.value, gstin: BUSINESS_TYPES.includes(e.target.value) ? n.gstin : '' }))}>
+              {CUSTOMER_TYPES.map((t) => <option key={t}>{t}</option>)}
+            </select>
+          </Field>
+          <Field label="Phone">
+            <input className="input" value={newCustomer.phone} onChange={(e) => setNewCustomer((n) => ({ ...n, phone: e.target.value }))} />
+          </Field>
+          <Field label="GSTIN" className="sm:col-span-2">
+            <input
+              className="input disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed"
+              disabled={!BUSINESS_TYPES.includes(newCustomer.type)}
+              placeholder={BUSINESS_TYPES.includes(newCustomer.type) ? '22AAAAA0000A1Z5' : 'Blocked — only for business customers (Corporate / Hospital)'}
+              value={newCustomer.gstin}
+              onChange={(e) => setNewCustomer((n) => ({ ...n, gstin: e.target.value }))}
+            />
+          </Field>
+          <Field label="Address" className="sm:col-span-2">
+            <input className="input" value={newCustomer.address} onChange={(e) => setNewCustomer((n) => ({ ...n, address: e.target.value }))} />
+          </Field>
+          <div className="sm:col-span-2 flex justify-end gap-2 pt-2 border-t border-slate-100">
+            <button type="button" className="btn-ghost" onClick={() => { setShowAddCustomer(false); setNewCustomer(BLANK_CUSTOMER) }}>Cancel</button>
+            <button className="btn-primary">Save Customer</button>
+          </div>
+        </form>
+      </Modal>
     </div>
   )
 }

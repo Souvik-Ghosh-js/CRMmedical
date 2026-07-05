@@ -155,10 +155,10 @@ export function seedIfEmpty(force = false) {
   write('batches', batches)
 
   write('customers', [
-    { id: 'c1', name: 'Walk-in Customer', phone: '', address: '', email: '', gstin: '', balance: 0, doctor: '' },
-    { id: 'c2', name: 'Rahul Sharma', phone: '9831012345', address: '45 Lake Road, Kolkata', email: 'rahul@example.com', gstin: '', balance: 540, doctor: 'Dr. Bose' },
-    { id: 'c3', name: 'City Hospital', phone: '03322334455', address: 'EM Bypass, Kolkata', email: 'pharmacy@cityhosp.in', gstin: '19CITYH1234H1Z2', balance: 12850, doctor: '' },
-    { id: 'c4', name: 'Anita Das', phone: '9007765432', address: 'Salt Lake Sec V', email: '', gstin: '', balance: 0, doctor: 'Dr. Roy' },
+    { id: 'c1', name: 'Walk-in Customer', type: 'Walk-in', phone: '', address: '', email: '', gstin: '', balance: 0, doctor: '' },
+    { id: 'c2', name: 'Rahul Sharma', type: 'Registered', phone: '9831012345', address: '45 Lake Road, Kolkata', email: 'rahul@example.com', gstin: '', balance: 540, doctor: 'Dr. Bose' },
+    { id: 'c3', name: 'City Hospital', type: 'Hospital', phone: '03322334455', address: 'EM Bypass, Kolkata', email: 'pharmacy@cityhosp.in', gstin: '19CITYH1234H1Z2', balance: 12850, doctor: '' },
+    { id: 'c4', name: 'Anita Das', type: 'Registered', phone: '9007765432', address: 'Salt Lake Sec V', email: '', gstin: '', balance: 0, doctor: 'Dr. Roy' },
   ])
 
   write('vendors', [
@@ -172,6 +172,7 @@ export function seedIfEmpty(force = false) {
   write('payments', [])
   write('notes', []) // credit/debit notes
   write('stockMoves', [])
+  write('expenses', []) // operating expenses (rent/salaries/electricity/marketing/other)
 
   // Seed all enterprise module collections (built by workflow).
   for (const [collection, seedRows] of Object.entries(moduleSeeds)) {

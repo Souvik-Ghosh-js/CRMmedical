@@ -17,7 +17,7 @@ export default function InvoicePrint({ inv }) {
           <div className="font-bold text-base">TAX INVOICE</div>
           <div className="text-xs">No: <b>{inv.invoiceNo}</b></div>
           <div className="text-xs">Date: {fmtDate(inv.date)}</div>
-          <div className="text-xs">Mode: {inv.payMode}</div>
+          <div className="text-xs">Mode: {inv.payMode}{inv.payMode === 'Card' && inv.cardLast4 ? ` (•••• ${inv.cardLast4})` : ''}</div>
         </div>
       </div>
 

@@ -4,6 +4,14 @@
 
 const PAY_MODES = ['Cash', 'UPI', 'Card', 'Credit', 'Bank Transfer']
 const PURCHASE_PAY = ['Bank Transfer', 'NEFT', 'Cheque', 'UPI']
+// Scaled to suit this seed dataset's revenue (~₹1-1.5L/month) — a small retail pharmacy, not a chain.
+const EXPENSE_CATS = [
+  { cat: 'Rent', base: 8000, variance: 0 },
+  { cat: 'Salaries', base: 22000, variance: 1500 },
+  { cat: 'Electricity', base: 3000, variance: 1000 },
+  { cat: 'Marketing', base: 2000, variance: 1500 },
+  { cat: 'Other', base: 1500, variance: 800 },
+]
 
 const rand = (n) => Math.floor(Math.random() * n)
 const pick = (arr) => arr[rand(arr.length)]
@@ -179,12 +187,24 @@ export function generateHistory(db, days = 90) {
     }
   }
 
+  // A modest, category-tagged operating-expense trail so P&L views aren't sales/purchases only.
+  const expenses = []
+  const monthsSeen = new Set()
+  for (let d = days; d >= 0; d--) monthsSeen.add(dateNDaysAgo(d).toISOString().slice(0, 7))
+  ;[...monthsSeen].sort().forEach((mKey) => {
+    EXPENSE_CATS.forEach((e, i) => {
+      const amount = round2(e.base + (Math.random() - 0.5) * 2 * e.variance)
+      expenses.push({ id: cryptoId(), expenseNo: `EXP-${mKey.replace('-', '')}-${i + 1}`, category: e.cat, date: `${mKey}-05`, amount, note: `${e.cat} — ${mKey}` })
+    })
+  })
+
   // newest first (matches insert() which unshifts)
-  sales.reverse(); purchases.reverse(); payments.reverse(); stockMoves.reverse()
+  sales.reverse(); purchases.reverse(); payments.reverse(); stockMoves.reverse(); expenses.reverse()
   db.replaceAll('sales', sales)
   db.replaceAll('purchases', purchases)
   db.replaceAll('payments', payments)
   db.replaceAll('stockMoves', stockMoves)
+  db.replaceAll('expenses', expenses)
 
   // Inter-company transactions between group companies (eliminated on consolidation).
   // Amounts are scaled to actual group revenue so eliminations are a sensible fraction of it
