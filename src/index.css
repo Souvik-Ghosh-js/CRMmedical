@@ -49,3 +49,19 @@
   #print-area { position: absolute; left: 0; top: 0; width: 100%; }
   .no-print { display: none !important; }
 }
+
+/* Mobile density pass: every page reuses these same spacing utilities for card padding,
+   grid gaps and section margins, so trimming them here tightens vertical rhythm app-wide
+   without hand-editing every page. !important is needed to win over the plain (non-responsive)
+   utility classes already in the markup. */
+@media (max-width: 640px) {
+  .p-6 { padding: 0.875rem !important; }
+  .p-5 { padding: 0.75rem !important; }
+  .p-4 { padding: 0.625rem !important; }
+  .px-5 { padding-left: 0.875rem !important; padding-right: 0.875rem !important; }
+  .py-5 { padding-top: 0.75rem !important; padding-bottom: 0.75rem !important; }
+  .gap-4, .gap-5 { gap: 0.625rem !important; }
+  .mb-4, .mb-5 { margin-bottom: 0.625rem !important; }
+  .mt-4 { margin-top: 0.625rem !important; }
+  .th, .td { padding-left: 0.625rem !important; padding-right: 0.625rem !important; padding-top: 0.5rem !important; padding-bottom: 0.5rem !important; }
+}

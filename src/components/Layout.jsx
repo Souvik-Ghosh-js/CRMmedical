@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { NavLink, useLocation, useNavigate } from 'react-router-dom'
 import { NAV } from '../nav'
 import { useAuth } from '../lib/auth'
@@ -7,11 +7,17 @@ import { productStock } from '../lib/stock'
 import { daysUntil, fmtDate } from '../lib/format'
 import GlobalSearch from './GlobalSearch'
 
+const isDesktop = () => typeof window !== 'undefined' && window.innerWidth >= 768
+
 export default function Layout({ children }) {
-  const [open, setOpen] = useState(true)
+  // Desktop: sidebar starts open and pushes content. Mobile: it starts closed and slides in as an overlay.
+  const [open, setOpen] = useState(isDesktop)
   const { user, logout, company } = useAuth()
   const loc = useLocation()
   const navigate = useNavigate()
+
+  // Auto-close the mobile drawer after navigating to a page.
+  useEffect(() => { if (!isDesktop()) setOpen(false) }, [loc.pathname])
 
   // State for notifications
   const [showNotifications, setShowNotifications] = useState(false)
@@ -172,9 +178,14 @@ export default function Layout({ children }) {
 
   return (
     <div className="h-full flex" style={{ background: '#f6f8fb' }}>
-      {/* Sidebar */}
-      <aside className={`no-print ${open ? 'w-[260px]' : 'w-0'} transition-all duration-200 shrink-0 overflow-hidden flex flex-col bg-slate-50 border-r border-slate-200/70`}>
-        <div className="h-16 flex items-center gap-2.5 px-5 shrink-0">
+      {/* Mobile backdrop — tap to close the drawer */}
+      {open && <div className="no-print fixed inset-0 z-30 bg-slate-900/40 md:hidden" onClick={() => setOpen(false)} />}
+
+      {/* Sidebar: fixed slide-in drawer on mobile, in-flow push panel on desktop */}
+      <aside
+        className={`no-print fixed md:static inset-y-0 left-0 z-40 md:z-auto w-[260px] ${open ? 'md:w-[260px]' : 'md:w-0'} ${open ? 'translate-x-0' : '-translate-x-full'} md:translate-x-0 transition-all duration-200 shrink-0 overflow-hidden flex flex-col bg-slate-50 border-r border-slate-200/70`}
+      >
+        <div className="h-14 md:h-16 flex items-center gap-2.5 px-4 md:px-5 shrink-0">
           <div className="w-9 h-9 rounded-xl grid place-items-center text-white font-bold text-lg shadow-sm" style={{ background: 'linear-gradient(135deg,#6366f1,#4338ca)' }}>℞</div>
           <div className="leading-tight">
             <div className="font-bold text-slate-800 text-[15px]">PharmaERP</div>
@@ -211,8 +222,8 @@ export default function Layout({ children }) {
 
       {/* Main */}
       <div className="flex-1 flex flex-col min-w-0">
-        <header className="no-print h-16 bg-white/80 backdrop-blur border-b border-slate-200/70 flex items-center gap-3 px-5 shrink-0 sticky top-0 z-20">
-          <button className="w-9 h-9 grid place-items-center rounded-lg text-slate-500 hover:bg-slate-100 transition" onClick={() => setOpen((o) => !o)} title="Toggle menu">
+        <header className="no-print h-14 md:h-16 bg-white/80 backdrop-blur border-b border-slate-200/70 flex items-center gap-2 md:gap-3 px-3 md:px-5 shrink-0 sticky top-0 z-20">
+          <button className="w-9 h-9 grid place-items-center rounded-lg text-slate-500 hover:bg-slate-100 transition shrink-0" onClick={() => setOpen((o) => !o)} title="Toggle menu">
             <Bars />
           </button>
           <div className="hidden md:block">
@@ -241,7 +252,7 @@ export default function Layout({ children }) {
             {showNotifications && (
               <>
                 <div className="fixed inset-0 z-30" onClick={() => setShowNotifications(false)} />
-                <div className="absolute right-0 mt-2.5 w-96 bg-white rounded-2xl border border-slate-200/90 shadow-2xl z-40 overflow-hidden flex flex-col max-h-[520px] transition-all transform origin-top-right">
+                <div className="absolute right-0 mt-2.5 w-[92vw] max-w-96 bg-white rounded-2xl border border-slate-200/90 shadow-2xl z-40 overflow-hidden flex flex-col max-h-[520px] transition-all transform origin-top-right">
                   <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
                     <div>
                       <h4 className="font-bold text-slate-800 text-sm">Notifications</h4>
@@ -349,7 +360,7 @@ export default function Layout({ children }) {
           </div>
         </header>
 
-        <main className="flex-1 overflow-y-auto p-6" key={loc.pathname}>
+        <main className="flex-1 overflow-y-auto p-3 sm:p-4 md:p-6" key={loc.pathname}>
           <div className="max-w-7xl mx-auto">{children}</div>
         </main>
       </div>
