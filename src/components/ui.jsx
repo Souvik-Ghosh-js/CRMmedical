@@ -78,12 +78,17 @@ export function Modal({ open, onClose, title, children, wide }) {
   }, [open, onClose])
   if (!open) return null
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center p-4 overflow-y-auto bg-slate-900/40 no-print" onMouseDown={onClose}>
+    // Note: no `no-print` here — this wrapper contains the printable content (e.g. InvoicePrint's
+    // #print-area). `no-print` uses `display:none`, which would remove the whole subtree from the
+    // print render, blanking out the invoice too. The backdrop/chrome instead relies on the
+    // `body * { visibility: hidden }` print rule, and only the header bar below is force-hidden
+    // since it sits alongside — not above — the printable children.
+    <div className="fixed inset-0 z-50 flex items-start justify-center p-4 overflow-y-auto bg-slate-900/40" onMouseDown={onClose}>
       <div
         className={`card mt-10 w-full ${wide ? 'max-w-5xl' : 'max-w-2xl'} mb-10`}
         onMouseDown={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between px-5 py-3 border-b border-slate-200">
+        <div className="no-print flex items-center justify-between px-5 py-3 border-b border-slate-200">
           <h3 className="font-semibold text-slate-800">{title}</h3>
           <button className="text-slate-400 hover:text-slate-700 text-xl leading-none" onClick={onClose}>×</button>
         </div>

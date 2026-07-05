@@ -7,13 +7,13 @@ export default function InvoicePrint({ inv }) {
 
   return (
     <div id="print-area" className="bg-white text-slate-800 text-sm">
-      <div className="flex justify-between items-start border-b-2 border-slate-800 pb-3">
+      <div className="flex flex-col sm:flex-row justify-between items-start gap-2 border-b-2 border-slate-800 pb-3">
         <div>
           <div className="text-lg font-bold">{company?.name}</div>
           <div className="text-xs text-slate-500 max-w-xs">{company?.address}</div>
           <div className="text-xs">GSTIN: {company?.gstin} · DL No: {company?.dlNo}</div>
         </div>
-        <div className="text-right">
+        <div className="sm:text-right">
           <div className="font-bold text-base">TAX INVOICE</div>
           <div className="text-xs">No: <b>{inv.invoiceNo}</b></div>
           <div className="text-xs">Date: {fmtDate(inv.date)}</div>
@@ -21,7 +21,7 @@ export default function InvoicePrint({ inv }) {
         </div>
       </div>
 
-      <div className="flex justify-between py-3 text-xs">
+      <div className="flex flex-col sm:flex-row justify-between gap-2 py-3 text-xs">
         <div>
           <div className="font-semibold text-slate-500 uppercase">Bill To</div>
           <div className="font-medium text-sm">{inv.customerName}</div>
@@ -29,12 +29,13 @@ export default function InvoicePrint({ inv }) {
           {customer?.phone && <div>Ph: {customer.phone}</div>}
           {inv.customerGstin && <div>GSTIN: {inv.customerGstin}</div>}
         </div>
-        <div className="text-right text-slate-500">
+        <div className="sm:text-right text-slate-500">
           <div>Tax type: {inv.interState ? 'IGST' : 'CGST + SGST'}</div>
         </div>
       </div>
 
-      <table className="w-full border-collapse text-xs">
+      <div className="overflow-x-auto print:overflow-visible">
+      <table className="w-full border-collapse text-xs min-w-[680px]">
         <thead>
           <tr className="bg-slate-100">
             {['#', 'Item', 'HSN', 'Batch', 'Exp', 'Qty', 'MRP', 'Rate', 'Disc%', 'GST%', 'Amount'].map((h) => (
@@ -60,14 +61,15 @@ export default function InvoicePrint({ inv }) {
           ))}
         </tbody>
       </table>
+      </div>
 
-      <div className="flex justify-between mt-3">
-        <div className="text-xs text-slate-500 max-w-sm">
+      <div className="flex flex-col sm:flex-row justify-between gap-4 mt-3">
+        <div className="text-xs text-slate-500 sm:max-w-sm">
           <div className="font-semibold">Terms & Notes</div>
           <div>Goods once sold cannot be returned without valid reason. Subject to local jurisdiction. E.&O.E.</div>
           <div className="mt-6">Prescription verified: ____________________</div>
         </div>
-        <div className="w-64 text-xs">
+        <div className="w-full sm:w-64 text-xs">
           <Row label="Taxable Value" value={inr(inv.taxable)} />
           {inv.billDisc > 0 && <Row label="Discount" value={'− ' + inr(inv.billDisc)} />}
           {inv.interState
