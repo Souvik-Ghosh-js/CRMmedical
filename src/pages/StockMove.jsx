@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useCollection } from '../lib/hooks'
 import * as db from '../lib/db'
-import { addStock, deductFEFO, productStock, fefoBatches } from '../lib/stock'
+import { addStock, deductFEFO, deductBatch, productStock, fefoBatches } from '../lib/stock'
 import { logAudit } from '../lib/audit'
 import { PageHeader, Field, Badge, Empty } from '../components/ui'
 import { fmtDateTime, today } from '../lib/format'
@@ -10,8 +10,15 @@ import BarcodeScanner from '../components/BarcodeScanner'
 export default function StockMove({ mode }) {
   const isIn = mode === 'in'
   const products = useCollection('products')
+  const vendors = useCollection('vendors')
+  const batches = useCollection('batches')
   const moves = useCollection('stockMoves')
+  const vendorName = (id) => vendors.find((v) => v.id === id)?.name || ''
+  const batchSupplierName = (productId, batchNo) =>
+    vendorName(batches.find((b) => b.productId === productId && b.batchNo === batchNo)?.supplierId)
   const [productId, setProductId] = useState('')
+  const [supplierId, setSupplierId] = useState('')
+  const [issueBatchId, setIssueBatchId] = useState('') // '' = auto FEFO
   const [qty, setQty] = useState('')
   const [batchNo, setBatchNo] = useState('')
   const [expiryDate, setExpiryDate] = useState('')
@@ -81,25 +88,47 @@ export default function StockMove({ mode }) {
     if (!productId || q <= 0) return
     if (isIn) {
       if (!batchNo) { setMsg('Batch number is required for stock in.'); setMsgTone('rose'); return }
-      addStock(productId, batchNo, q, { expiryDate, mrp: product.mrp, costPrice: product.purchasePrice })
+      addStock(productId, batchNo, q, { expiryDate, mrp: product.mrp, costPrice: product.purchasePrice, supplierId })
     } else {
       if (q > available) { setMsg(`Only ${available} units available.`); setMsgTone('rose'); return }
-      const { allocations } = deductFEFO(productId, q)
+      let allocations
+      try {
+        if (issueBatchId) {
+          ({ allocations } = deductBatch(issueBatchId, q))
+        } else {
+          ({ allocations } = deductFEFO(productId, q))
+        }
+      } catch (err) {
+        setMsg(err.message); setMsgTone('rose'); return
+      }
       logAudit('Stock Out', `${product.name} -${q} via ${allocations.map((a) => a.batchNo).join(', ')}`)
+      db.insert('stockMoves', {
+        type: 'OUT',
+        productId,
+        productName: product.name,
+        qty: q,
+        batchNo: allocations.map((a) => a.batchNo).join(', '),
+        reason,
+        date: new Date().toISOString(),
+      })
+      setMsg(`Removed ${q} units of ${product.name}.`)
+      setMsgTone('green')
+      setQty(''); setBatchNo(''); setExpiryDate(''); setSupplierId(''); setIssueBatchId('')
+      return
     }
     db.insert('stockMoves', {
-      type: isIn ? 'IN' : 'OUT',
+      type: 'IN',
       productId,
       productName: product.name,
       qty: q,
-      batchNo: isIn ? batchNo : '(FEFO)',
+      batchNo,
       reason,
       date: new Date().toISOString(),
     })
-    if (isIn) logAudit('Stock In', `${product.name} +${q} batch ${batchNo}`)
-    setMsg(`${isIn ? 'Added' : 'Removed'} ${q} units of ${product.name}.`)
+    logAudit('Stock In', `${product.name} +${q} batch ${batchNo}`)
+    setMsg(`Added ${q} units of ${product.name}.`)
     setMsgTone('green')
-    setQty(''); setBatchNo(''); setExpiryDate('')
+    setQty(''); setBatchNo(''); setExpiryDate(''); setSupplierId(''); setIssueBatchId('')
   }
 
   const recent = moves.filter((m) => m.type === (isIn ? 'IN' : 'OUT')).slice(0, 10)
@@ -136,7 +165,7 @@ export default function StockMove({ mode }) {
               required
               className="input"
               value={productId}
-              onChange={(e) => { setProductId(e.target.value); setMsg('') }}
+              onChange={(e) => { setProductId(e.target.value); setIssueBatchId(''); setMsg('') }}
             >
               <option value="">Select product…</option>
               {products.map((p) => (
@@ -177,14 +206,28 @@ export default function StockMove({ mode }) {
           </div>
 
           {isIn && (
-            <Field label="Expiry Date">
-              <input
-                type="date"
-                className="input"
-                value={expiryDate}
-                onChange={(e) => setExpiryDate(e.target.value)}
-              />
-            </Field>
+            <div className="grid grid-cols-2 gap-4">
+              <Field label="Supplier / Company">
+                <select
+                  className="input"
+                  value={supplierId}
+                  onChange={(e) => setSupplierId(e.target.value)}
+                >
+                  <option value="">Select supplier…</option>
+                  {vendors.map((v) => (
+                    <option key={v.id} value={v.id}>{v.name}</option>
+                  ))}
+                </select>
+              </Field>
+              <Field label="Expiry Date">
+                <input
+                  type="date"
+                  className="input"
+                  value={expiryDate}
+                  onChange={(e) => setExpiryDate(e.target.value)}
+                />
+              </Field>
+            </div>
           )}
 
           <Field label="Reason / Reference">
@@ -196,12 +239,21 @@ export default function StockMove({ mode }) {
           </Field>
 
           {!isIn && product && (
-            <div className="text-xs text-slate-500 bg-slate-50 rounded-lg p-3 border border-slate-100">
-              <div className="font-semibold mb-1">FEFO allocation preview</div>
-              {fefoBatches(productId).slice(0, 4).map((b) => (
-                <div key={b.id}>{b.batchNo} — {b.qty} units · exp {b.expiryDate}</div>
-              ))}
-            </div>
+            <Field label="Issue From (Batch / Company)">
+              <select
+                className="input"
+                value={issueBatchId}
+                onChange={(e) => setIssueBatchId(e.target.value)}
+              >
+                <option value="">Auto (FEFO — earliest expiry first)</option>
+                {fefoBatches(productId).map((b) => (
+                  <option key={b.id} value={b.id}>
+                    {b.batchNo} — {b.qty} units · exp {b.expiryDate}
+                    {vendorName(b.supplierId) ? ` · ${vendorName(b.supplierId)}` : ''}
+                  </option>
+                ))}
+              </select>
+            </Field>
           )}
 
           {msg && (
@@ -228,7 +280,10 @@ export default function StockMove({ mode }) {
                 <div key={m.id} className="flex items-center justify-between border-b border-slate-100 pb-2 text-sm">
                   <div>
                     <div className="font-medium">{m.productName}</div>
-                    <div className="text-xs text-slate-400">{m.reason} · {fmtDateTime(m.date)}</div>
+                    <div className="text-xs text-slate-400">
+                      {m.reason} · {fmtDateTime(m.date)}
+                      {isIn && batchSupplierName(m.productId, m.batchNo) && ` · ${batchSupplierName(m.productId, m.batchNo)}`}
+                    </div>
                   </div>
                   <Badge tone={isIn ? 'green' : 'rose'}>
                     {isIn ? '+' : '−'}{m.qty} {m.batchNo}

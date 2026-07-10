@@ -28,6 +28,16 @@ export function deductFEFO(productId, qty) {
   return { allocations, shortfall: remaining }
 }
 
+// Deduct qty from one specific batch only (used when the user picks an exact
+// batch/company to issue from instead of letting FEFO auto-allocate).
+export function deductBatch(batchId, qty) {
+  const b = db.get('batches', batchId)
+  if (!b) throw new Error('Batch not found')
+  if (Number(qty) > Number(b.qty)) throw new Error('Insufficient quantity in selected batch')
+  db.update('batches', batchId, { qty: Number(b.qty) - Number(qty) })
+  return { allocations: [{ batchId: b.id, batchNo: b.batchNo, expiryDate: b.expiryDate, qty: Number(qty), mrp: b.mrp }], shortfall: 0 }
+}
+
 // Return previously-allocated units to their original batches (used when editing/cancelling an invoice).
 export function restoreAllocations(lines) {
   for (const l of lines || []) {
