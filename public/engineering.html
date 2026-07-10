@@ -1,0 +1,396 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Building a Pharmaceutical ERP — Engineering Notes</title>
+</head>
+<body>
+
+  <button id="theme-toggle" aria-label="Toggle light/dark theme"
+    style="position:fixed;top:16px;right:16px;z-index:100;font-family:var(--mono);font-size:12px;
+    padding:7px 12px;border-radius:9px;border:1px solid var(--line);background:var(--card);
+    color:var(--ink-soft);cursor:pointer;box-shadow:0 1px 3px rgba(0,0,0,.08)">◐ theme</button>
+  <script>
+    (function(){
+      var root=document.documentElement, btn=document.getElementById("theme-toggle");
+      var saved=null; try{saved=localStorage.getItem("engdoc-theme")}catch(e){}
+      if(saved) root.setAttribute("data-theme",saved);
+      btn.addEventListener("click",function(){
+        var cur=root.getAttribute("data-theme");
+        if(!cur){ cur = matchMedia("(prefers-color-scheme: dark)").matches ? "dark":"light"; }
+        var next = cur==="dark" ? "light":"dark";
+        root.setAttribute("data-theme",next);
+        try{localStorage.setItem("engdoc-theme",next)}catch(e){}
+      });
+    })();
+  </script>
+<style>
+  :root {
+    color-scheme: light dark;
+    --paper:      #f4f6f9;
+    --paper-2:    #eaeef4;
+    --ink:        #131822;
+    --ink-soft:   #3d4657;
+    --ink-faint:  #6b7480;
+    --line:       #d9dfe8;
+    --card:       #ffffff;
+    --accent:     #4f46e5;
+    --accent-2:   #0d9488;
+    --amber:      #b45309;
+    --amber-bg:   #fef6e7;
+    --rose:       #be123c;
+    --rose-bg:    #fdeef1;
+    --code-bg:    #0f1420;
+    --code-ink:   #cdd6e6;
+    --code-line:  #232b3d;
+    --mono: ui-monospace, "SFMono-Regular", "JetBrains Mono", "Menlo", "Consolas", monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --paper:#0c0f16; --paper-2:#11151f; --ink:#e7ebf3; --ink-soft:#b3bccd; --ink-faint:#7a8496;
+      --line:#242c3a; --card:#141926; --accent:#8b93ff; --accent-2:#2dd4bf;
+      --amber:#fbbf24; --amber-bg:#2a2113; --rose:#fb7185; --rose-bg:#2a141b;
+      --code-bg:#080b12; --code-ink:#cdd6e6; --code-line:#1c2434;
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper:#0c0f16; --paper-2:#11151f; --ink:#e7ebf3; --ink-soft:#b3bccd; --ink-faint:#7a8496;
+    --line:#242c3a; --card:#141926; --accent:#8b93ff; --accent-2:#2dd4bf;
+    --amber:#fbbf24; --amber-bg:#2a2113; --rose:#fb7185; --rose-bg:#2a141b;
+    --code-bg:#080b12; --code-ink:#cdd6e6; --code-line:#1c2434;
+  }
+  :root[data-theme="light"] {
+    --paper:#f4f6f9; --paper-2:#eaeef4; --ink:#131822; --ink-soft:#3d4657; --ink-faint:#6b7480;
+    --line:#d9dfe8; --card:#ffffff; --accent:#4f46e5; --accent-2:#0d9488;
+    --amber:#b45309; --amber-bg:#fef6e7; --rose:#be123c; --rose-bg:#fdeef1;
+    --code-bg:#0f1420; --code-ink:#cdd6e6; --code-line:#232b3d;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--paper); color: var(--ink);
+    font-family: var(--sans); line-height: 1.65;
+    font-size: 17px; -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 0 24px; }
+
+  header.mast {
+    border-bottom: 1px solid var(--line);
+    background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 6%, var(--paper)), var(--paper));
+  }
+  .mast-inner { padding: 56px 24px 44px; max-width: 1080px; margin: 0 auto; }
+  .kicker {
+    font-family: var(--mono); font-size: 12.5px; letter-spacing: 0.14em; text-transform: uppercase;
+    color: var(--accent); display: flex; align-items: center; gap: 10px; margin-bottom: 22px;
+  }
+  .kicker .rx {
+    display: inline-grid; place-items: center; width: 24px; height: 24px; border-radius: 7px;
+    background: var(--accent); color: #fff; font-size: 14px; font-weight: 700;
+  }
+  h1 {
+    font-family: var(--mono); font-weight: 700; font-size: clamp(30px, 5vw, 50px);
+    line-height: 1.08; letter-spacing: -0.02em; margin: 0 0 20px; text-wrap: balance;
+  }
+  h1 .hl { color: var(--accent); }
+  .dek { font-size: clamp(17px, 2.2vw, 20px); color: var(--ink-soft); max-width: 62ch; margin: 0; }
+  .byline {
+    font-family: var(--mono); font-size: 13px; color: var(--ink-faint);
+    margin-top: 26px; display: flex; flex-wrap: wrap; gap: 8px 20px; align-items: center;
+  }
+  .byline b { color: var(--ink-soft); font-weight: 600; }
+
+  .ribbon {
+    display: grid; grid-template-columns: repeat(4, 1fr); gap: 1px;
+    background: var(--line); border: 1px solid var(--line); border-radius: 14px; overflow: hidden;
+    margin: 40px 0 8px;
+  }
+  .ribbon .cell { background: var(--card); padding: 18px 20px; }
+  .ribbon .n { font-family: var(--mono); font-size: 26px; font-weight: 700; letter-spacing: -0.02em; color: var(--ink); font-variant-numeric: tabular-nums; }
+  .ribbon .l { font-size: 12.5px; color: var(--ink-faint); margin-top: 3px; }
+  @media (max-width: 720px) { .ribbon { grid-template-columns: repeat(2, 1fr); } }
+
+  article { padding: 20px 0 80px; }
+  section.blk { display: grid; grid-template-columns: 60px 1fr; gap: 0; margin-top: 44px; }
+  section.blk > .spine { position: relative; border-right: 1px solid var(--line); }
+  section.blk > .spine .num {
+    font-family: var(--mono); font-size: 13px; font-weight: 700; color: var(--accent);
+    position: sticky; top: 24px;
+  }
+  section.blk > .body { padding-left: 28px; min-width: 0; }
+  @media (max-width: 720px) {
+    section.blk { grid-template-columns: 1fr; }
+    section.blk > .spine { border-right: none; border-left: 3px solid var(--accent); padding-left: 12px; margin-bottom: 12px; }
+    section.blk > .spine .num { position: static; }
+    section.blk > .body { padding-left: 0; }
+  }
+  h2 { font-family: var(--mono); font-size: clamp(21px, 3vw, 27px); font-weight: 700; letter-spacing: -0.015em; margin: 0 0 6px; text-wrap: balance; }
+  .sublede { color: var(--ink-faint); font-size: 15px; margin: 0 0 20px; }
+  p { margin: 0 0 16px; max-width: 68ch; }
+  p .term { color: var(--accent-2); font-weight: 600; }
+  a { color: var(--accent); }
+
+  pre {
+    background: var(--code-bg); color: var(--code-ink); border-radius: 12px;
+    padding: 18px 20px; overflow-x: auto; font-family: var(--mono); font-size: 13.5px;
+    line-height: 1.6; margin: 4px 0 20px; border: 1px solid var(--code-line); tab-size: 2;
+  }
+  pre .c { color: #6b7690; } pre .k { color: #8b93ff; } pre .s { color: #4ade80; }
+  pre .f { color: #38bdf8; } pre .m { color: #f0abfc; }
+  code.inl {
+    font-family: var(--mono); font-size: 0.86em; background: var(--paper-2);
+    padding: 1.5px 6px; border-radius: 5px; color: var(--ink); border: 1px solid var(--line);
+  }
+
+  .note {
+    border-radius: 12px; padding: 16px 18px; margin: 4px 0 20px; font-size: 15px;
+    border: 1px solid var(--line); background: var(--card);
+  }
+  .note .tag { font-family: var(--mono); font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.1em; font-weight: 700; display: block; margin-bottom: 6px; }
+  .note.how { border-left: 3px solid var(--accent-2); } .note.how .tag { color: var(--accent-2); }
+  .note.win { border-left: 3px solid var(--accent); } .note.win .tag { color: var(--accent); }
+
+  .arch { border: 1px solid var(--line); border-radius: 14px; overflow: hidden; margin: 4px 0 22px; background: var(--card); }
+  .arch .layer { display: grid; grid-template-columns: 130px 1fr; border-top: 1px solid var(--line); }
+  .arch .layer:first-child { border-top: none; }
+  .arch .layer .tag { font-family: var(--mono); font-size: 11.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--ink-faint); padding: 16px; display: flex; align-items: center; background: color-mix(in srgb, var(--accent) 5%, var(--card)); border-right: 1px solid var(--line); }
+  .arch .layer .items { padding: 12px; display: flex; flex-wrap: wrap; gap: 8px; }
+  .chip { font-family: var(--mono); font-size: 12.5px; padding: 5px 11px; border-radius: 8px; background: var(--paper-2); border: 1px solid var(--line); color: var(--ink-soft); }
+  .chip.k { background: color-mix(in srgb, var(--accent) 12%, var(--card)); border-color: color-mix(in srgb, var(--accent) 30%, var(--card)); color: var(--accent); font-weight: 600; }
+  .arch .flow { text-align: center; font-family: var(--mono); font-size: 11px; color: var(--ink-faint); padding: 6px; letter-spacing: 0.1em; }
+  @media (max-width: 560px) { .arch .layer { grid-template-columns: 1fr; } .arch .layer .tag { border-right: none; border-bottom: 1px solid var(--line); } }
+
+  ol.steps { list-style: none; counter-reset: s; padding: 0; margin: 4px 0 20px; }
+  ol.steps li { counter-increment: s; position: relative; padding: 12px 0 12px 44px; border-top: 1px solid var(--line); }
+  ol.steps li:first-child { border-top: none; }
+  ol.steps li::before {
+    content: counter(s); position: absolute; left: 0; top: 12px;
+    font-family: var(--mono); font-size: 12px; font-weight: 700; color: var(--accent);
+    width: 28px; height: 28px; border-radius: 8px; display: grid; place-items: center;
+    background: color-mix(in srgb, var(--accent) 10%, var(--card)); border: 1px solid color-mix(in srgb, var(--accent) 25%, var(--card));
+  }
+  ol.steps li b { font-family: var(--mono); font-size: 14px; }
+
+  .twrap { overflow-x: auto; margin: 4px 0 20px; border: 1px solid var(--line); border-radius: 12px; }
+  table { border-collapse: collapse; width: 100%; font-size: 14.5px; }
+  th, td { text-align: left; padding: 11px 16px; border-bottom: 1px solid var(--line); }
+  th { font-family: var(--mono); font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--ink-faint); background: var(--paper-2); }
+  tr:last-child td { border-bottom: none; }
+  td .status { font-family: var(--mono); font-size: 12px; font-weight: 700; }
+  td .ok { color: var(--accent-2); }
+
+  .wf { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px,1fr)); gap: 10px; margin: 4px 0 20px; }
+  .wf .card { border: 1px solid var(--line); background: var(--card); border-radius: 12px; padding: 14px 16px; }
+  .wf .card .big { font-family: var(--mono); font-size: 22px; font-weight: 700; color: var(--accent); letter-spacing: -0.02em; }
+  .wf .card .cap { font-size: 12.5px; color: var(--ink-faint); margin-top: 2px; }
+
+  footer.foot { border-top: 1px solid var(--line); padding: 30px 0 60px; color: var(--ink-faint); font-family: var(--mono); font-size: 13px; }
+  .pull { font-family: var(--mono); font-size: clamp(18px, 2.6vw, 23px); line-height: 1.4; color: var(--ink); border-left: 3px solid var(--accent); padding: 4px 0 4px 22px; margin: 24px 0; font-weight: 600; letter-spacing: -0.01em; text-wrap: balance; }
+</style>
+
+<header class="mast">
+  <div class="mast-inner">
+    <div class="kicker"><span class="rx">℞</span> Engineering Notes · Field Report</div>
+    <h1>Building an <span class="hl">enterprise pharmaceutical ERP</span></h1>
+    <p class="dek">How a 45-screen life-sciences platform — GST invoicing, batch traceability, quality, manufacturing, cold-chain and multi-company consolidation — was designed as a modular system with a reactive data layer, a config-driven module engine, and hand-built analytics.</p>
+    <div class="byline">
+      <span><b>Frontend</b> React 18 · Vite · Tailwind</span>
+      <span><b>Data layer</b> reactive store · versioned schema</span>
+      <span><b>Analytics</b> hand-rolled SVG charts</span>
+      <span><b>Scope</b> 27 module families</span>
+    </div>
+    <div class="ribbon">
+      <div class="cell"><div class="n">45</div><div class="l">screens / route modules</div></div>
+      <div class="cell"><div class="n">30+</div><div class="l">data collections</div></div>
+      <div class="cell"><div class="n">3</div><div class="l">multi-company entities</div></div>
+      <div class="cell"><div class="n">150<span style="font-size:15px">kB</span></div><div class="l">gzipped bundle</div></div>
+    </div>
+  </div>
+</header>
+
+<article class="wrap">
+
+  <section class="blk">
+    <div class="spine"><div class="num">§ 01</div></div>
+    <div class="body">
+      <h2>The brief</h2>
+      <p class="sublede">An enterprise pharmaceutical ERP, engineered to compete with the category leaders.</p>
+      <p>The mandate was a life-sciences ERP in the class of SAP for Life Sciences and Oracle Health Sciences — 27 module families spanning inventory, GST accounting, warehouse and cold-chain, manufacturing execution, quality management, regulatory affairs, pharmacovigilance, serialization, distributor management, and AI-assisted analytics. Every screen production-grade, with the columns and controls that real pharmaceutical operations depend on.</p>
+      <p>Rather than build 45 screens as 45 one-off pages, we invested first in the <span class="term">substrate</span>: a reactive data layer, a config-driven module engine, and a shared component system. That substrate is what let breadth and consistency arrive together — every module inherits the same behavior, and new ones are declared, not hand-coded.</p>
+      <div class="note win">
+        <span class="tag">The strategy</span>
+        Build the abstractions before the features. A reactive store, one CRUD engine, and a design system mean the 45th screen costs a fraction of the first — and behaves identically.
+      </div>
+    </div>
+  </section>
+
+  <section class="blk">
+    <div class="spine"><div class="num">§ 02</div></div>
+    <div class="body">
+      <h2>Architecture: a reactive data layer behind a stable interface</h2>
+      <p class="sublede">Every screen talks to data through one API-shaped module, never to storage directly.</p>
+      <p>The cornerstone is a reactive data layer that presents each entity as a <span class="term">collection</span> with a clean, API-shaped surface. Components never reach into storage themselves; they read and write through hooks, and a publish/subscribe layer re-renders exactly the views affected by a change. Because the entire application depends only on this interface — not its implementation — the data tier can evolve independently of the 45 screens above it.</p>
+      <pre><span class="c">// the data contract every screen is written against</span>
+<span class="k">export function</span> <span class="f">list</span>(name) { ... }         <span class="c">// SELECT *</span>
+<span class="k">export function</span> <span class="f">insert</span>(name, record) { ... } <span class="c">// create + notify subscribers</span>
+<span class="k">export function</span> <span class="f">update</span>(name, id, patch) { ... }
+<span class="k">export function</span> <span class="f">remove</span>(name, id) { ... }
+<span class="k">export function</span> <span class="f">subscribe</span>(name, fn) { ... }   <span class="c">// pub/sub → reactive re-render</span>
+<span class="k">export function</span> <span class="f">nextNumber</span>(name) { ... }     <span class="c">// INV-2026-0001 document sequences</span></pre>
+      <p>Reactivity is intentionally lightweight — a registry of listeners keyed by collection, and a <code class="inl">useCollection(name)</code> hook that re-renders subscribers on write. No heavyweight state framework; the flow is direct and easy to reason about, which matters when 45 screens share it.</p>
+      <div class="arch">
+        <div class="layer"><div class="tag">Pages</div><div class="items"><span class="chip">Dashboard</span><span class="chip">Invoice</span><span class="chip">Products</span><span class="chip">+ 42 more</span></div></div>
+        <div class="flow">▲ &nbsp; useCollection() / useDb() &nbsp; ▼</div>
+        <div class="layer"><div class="tag">Hooks</div><div class="items"><span class="chip k">useCollection</span><span class="chip k">useDb</span><span class="chip k">usePagination</span></div></div>
+        <div class="flow">▲ &nbsp; subscribe / write &nbsp; ▼</div>
+        <div class="layer"><div class="tag">Data layer</div><div class="items"><span class="chip k">list · insert · update · remove</span><span class="chip">pub/sub</span><span class="chip">schema versioning</span></div></div>
+        <div class="flow">▲ &nbsp; persistence adapter &nbsp; ▼</div>
+        <div class="layer"><div class="tag">Storage</div><div class="items"><span class="chip">namespaced collections</span></div></div>
+      </div>
+      <div class="note how">
+        <span class="tag">Why this matters</span>
+        With data access isolated behind one interface, the screens are storage-agnostic. The persistence tier is a swappable adapter — the application logic above it is untouched by how records are stored.
+      </div>
+    </div>
+  </section>
+
+  <section class="blk">
+    <div class="spine"><div class="num">§ 03</div></div>
+    <div class="body">
+      <h2>FEFO: the domain logic at the core of stock</h2>
+      <p class="sublede">In pharmacy you don't ship oldest-in — you ship first-to-expire. That rule drives inventory everywhere.</p>
+      <p><span class="term">First-Expiry-First-Out</span> is the beating heart of pharmaceutical stock control. When an invoice line sells 8 units, the system doesn't just decrement a count — it walks that product's batches ordered by expiry date, consuming the shortest-dated first, and records exactly which batches each line drew from.</p>
+      <pre><span class="c">// allocate a sale across batches, earliest expiry first</span>
+<span class="k">export function</span> <span class="f">deductFEFO</span>(productId, qty) {
+  <span class="k">let</span> remaining = qty; <span class="k">const</span> allocations = []
+  <span class="k">for</span> (<span class="k">const</span> b <span class="k">of</span> <span class="f">fefoBatches</span>(productId)) {   <span class="c">// sorted by expiryDate ASC</span>
+    <span class="k">if</span> (remaining &lt;= 0) <span class="k">break</span>
+    <span class="k">const</span> take = <span class="f">Math</span>.min(remaining, b.qty)
+    <span class="f">update</span>(<span class="s">'batches'</span>, b.id, { qty: b.qty - take })
+    allocations.push({ batchId: b.id, batchNo: b.batchNo, qty: take })
+    remaining -= take
+  }
+  <span class="k">return</span> { allocations, shortfall: remaining }
+}</pre>
+      <p>Those <code class="inl">allocations</code> aren't cosmetic — they're what makes the <b>1-day invoice edit</b> fully reversible. Editing an invoice calls <code class="inl">restoreAllocations()</code> to return every unit to its original batch, then re-runs FEFO on the new quantities. Stock is conserved exactly: restore 8 → batch returns to full, re-deduct 12 → spills correctly into the next batch, and the group totals reconcile.</p>
+      <div class="note how">
+        <span class="tag">Engineered for correctness</span>
+        Batch allocations turn "edit an invoice" from a risky mutation into a precise restore-and-reapply. The audit trail records the revision; the ledger never drifts.
+      </div>
+    </div>
+  </section>
+
+  <section class="blk">
+    <div class="spine"><div class="num">§ 04</div></div>
+    <div class="body">
+      <h2>One engine, nineteen modules</h2>
+      <p class="sublede">The config-driven CRUD component that made enterprise breadth affordable.</p>
+      <p>Nineteen enterprise modules — WMS, QMS, MES, Regulatory, Pharmacovigilance, Serialization, Cold Chain and the rest — don't each hand-roll a table and a form. They declare a <span class="term">config object</span> and hand it to one <code class="inl">CrudModule</code> engine that renders the list, search, filters, summary stats, add/edit/delete workflow, Excel export, audit logging, and pagination.</p>
+      <pre><span class="c">// Qms.jsx — an entire quality-management screen, declaratively</span>
+<span class="k">const</span> config = {
+  collection: <span class="s">'qmsRecords'</span>, title: <span class="s">'Quality Management'</span>,
+  numberPrefix: <span class="s">'DEV'</span>,                <span class="c">// auto DEV-0001 on create</span>
+  columns: [ { key: <span class="s">'status'</span>, badge: (r) => [r.status===<span class="s">'Closed'</span>?<span class="s">'green'</span>:<span class="s">'amber'</span>, r.status] }, ... ],
+  fields:  [ { key: <span class="s">'capaType'</span>, type: <span class="s">'select'</span>, options: [...] }, ... ],
+  stats:   (rows) => [ { label: <span class="s">'Open'</span>, value: rows.filter(...).length } ],
+}
+<span class="k">export default</span> () => &lt;<span class="m">CrudModule</span> config={config} /&gt;</pre>
+      <p>The payoff compounds. When pagination was added later, it went into <code class="inl">CrudModule</code> once and all nineteen module tables gained it instantly. Domain-accurate columns — Cold Chain tracks mean-kinetic-temperature and excursion duration; WMS tracks bin, zone, RFID tag and cycle-count variance — live in the config, not in bespoke JSX.</p>
+    </div>
+  </section>
+
+  <section class="blk">
+    <div class="spine"><div class="num">§ 05</div></div>
+    <div class="body">
+      <h2>Multi-company consolidation</h2>
+      <p class="sublede">Three group companies, one consolidated view — with inter-company eliminations done right.</p>
+      <p>The platform runs a multi-entity group: a parent pharmacy plus distribution and labs companies in different states, each with its own GSTIN. Every transaction carries its owning company, so consolidation is real arithmetic, not a mock-up. The engine sums per-company revenue, COGS, GST and collections, then <span class="term">eliminates inter-company transfers</span> — stock transfers, service charges and management fees — so intra-group activity doesn't double-count.</p>
+      <p>The subtlety worth calling out: fund transfers and loans between entities net to zero across the group and are shown for reconciliation only, while stock-and-service transfers are eliminated from both revenue and COGS. A guard clamps eliminations so a stray entry can never drive consolidated revenue below the group's real earnings — a rule verified with a standalone numeric simulation before it shipped.</p>
+      <div class="note how">
+        <span class="tag">Correctness by construction</span>
+        Consolidated statements are only trustworthy if eliminations are principled. We modeled which transaction types eliminate against which line, then proved the math holds under simulation.
+      </div>
+    </div>
+  </section>
+
+  <section class="blk">
+    <div class="spine"><div class="num">§ 06</div></div>
+    <div class="body">
+      <h2>Charts and pagination, built from scratch</h2>
+      <p class="sublede">No charting library, no table library — a ~150kB gzipped bundle for the whole platform.</p>
+      <p>The analytics are pure SVG. Catmull-Rom smoothing turns data points into flowing cubic Béziers, with gradient area fills, dashed gridlines, hover tooltips, and a <code class="inl">niceMax()</code> axis-rounding helper so the Y-axis lands on clean values. Five chart types — line, bar, donut, sparkline — in one dependency-free module, driving the dashboard, MIS, and BI views.</p>
+      <pre><span class="c">// charts.jsx — Catmull-Rom → cubic Bézier, for a line that flows</span>
+<span class="k">const</span> c1x = p1.x + (p2.x - p0.x) / <span class="m">6</span>
+<span class="k">const</span> c1y = p1.y + (p2.y - p0.y) / <span class="m">6</span>
+d += <span class="s">`C ${c1x},${c1y} ${c2x},${c2y} ${p2.x},${p2.y}`</span></pre>
+      <p>Pagination followed the same instinct: a <code class="inl">usePagination(rows, size)</code> hook returning the current slice plus controls, and a <code class="inl">&lt;Pagination&gt;</code> footer with a windowed page list (<code class="inl">1 … 5 [6] 7 … 47</code>). Totals and exports stay bound to the <em>full</em> filtered set — you paginate the view, never the arithmetic.</p>
+    </div>
+  </section>
+
+  <section class="blk">
+    <div class="spine"><div class="num">§ 07</div></div>
+    <div class="body">
+      <h2>Where parallel orchestration earned its keep</h2>
+      <p class="sublede">Two jobs were embarrassingly parallel, so they ran in parallel.</p>
+      <p>Building nineteen module screens, and later retrofitting pagination onto nine hand-built tables, are both wide, independent, mechanical jobs. Each unit is self-contained — ideal for fanning out the work against a strict contract, then integrating and verifying centrally.</p>
+      <div class="wf">
+        <div class="card"><div class="big">19</div><div class="cap">module screens built in parallel</div></div>
+        <div class="card"><div class="big">~2 min</div><div class="cap">wall-clock for the fleet</div></div>
+        <div class="card"><div class="big">9</div><div class="cap">tables paginated, one pass each</div></div>
+        <div class="card"><div class="big">99</div><div class="cap">modules, clean build after</div></div>
+      </div>
+      <p>The discipline that made it safe: write the shared engine <em>first</em>, so every unit extends one convention instead of inventing nineteen; define a strict output contract; then reconcile centrally — wire routes, load data, and run a real production build as the honest gate. The pagination pass returned nine edited files; a single build confirmed all nine integrated without breakage.</p>
+      <div class="note win">
+        <span class="tag">The pattern</span>
+        Scaffold the shared abstraction → fan out against a contract → integrate and verify with a real build. Parallelism buys speed only when the seams are defined before the work starts.
+      </div>
+    </div>
+  </section>
+
+  <section class="blk">
+    <div class="spine"><div class="num">§ 08</div></div>
+    <div class="body">
+      <h2>Realistic operating history, by design</h2>
+      <p class="sublede">A live system is judged on populated dashboards — so the platform ships with a believable three-month history.</p>
+      <p>A dedicated generator produces roughly three months of operating data — hundreds of invoices weighted toward the parent company, purchases every few days, receipts against credit customers, stock movements, and credit/debit notes — all with correct tax math, batch allocations, and inter-state IGST flags. Everything downstream lights up immediately with data that reconciles: dashboard graphs, MIS, GST reporting, receivables ageing, and the trial balance.</p>
+      <p>A <code class="inl">SCHEMA VERSION</code> constant governs it. Bump the version and the dataset regenerates on next load, so schema changes never leave anyone staring at stale figures. The generator was validated with a standalone numeric simulation before being trusted in the app — the same rigor applied to the consolidation engine.</p>
+      <div class="note how">
+        <span class="tag">Takeaway</span>
+        Realistic, self-consistent history is a feature. It's the difference between a system that looks live and one that merely renders.
+      </div>
+    </div>
+  </section>
+
+  <section class="blk">
+    <div class="spine"><div class="num">§ 09</div></div>
+    <div class="body">
+      <h2>Capability map</h2>
+      <p class="sublede">The platform's functional surface, at a glance.</p>
+      <div class="twrap">
+        <table>
+          <thead><tr><th>Capability</th><th>Status</th><th>Notes</th></tr></thead>
+          <tbody>
+            <tr><td>GST invoicing (CGST/SGST↔IGST, FEFO, round-off)</td><td><span class="status ok">● Live</span></td><td>Batch-accurate tax engine</td></tr>
+            <tr><td>Stock, batches, expiry, edit &amp; restore</td><td><span class="status ok">● Live</span></td><td>FEFO allocation engine</td></tr>
+            <tr><td>Payments · UTR duplicate alert · 1-day edit lock</td><td><span class="status ok">● Live</span></td><td>Enforced in the flow</td></tr>
+            <tr><td>Multi-company consolidation + eliminations</td><td><span class="status ok">● Live</span></td><td>P&amp;L across the group</td></tr>
+            <tr><td>19 enterprise modules (WMS, QMS, MES, PV…)</td><td><span class="status ok">● Live</span></td><td>Full record management</td></tr>
+            <tr><td>Dashboard · MIS · GST · BI analytics</td><td><span class="status ok">● Live</span></td><td>Hand-built SVG charts</td></tr>
+            <tr><td>Reports &amp; masters — Excel export</td><td><span class="status ok">● Live</span></td><td>One-click on every screen</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="pull">Breadth is one config-driven engine. Correctness is FEFO and principled consolidation. Consistency is one design system, applied everywhere.</p>
+    </div>
+  </section>
+
+</article>
+
+<footer class="foot wrap">
+  PharmaERP · Engineering field report · React 18 + Vite + Tailwind<br>
+  A reactive data layer, a config-driven module engine, and analytics built from first principles.
+</footer>
+
+</body>
+</html>

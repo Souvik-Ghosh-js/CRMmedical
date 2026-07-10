@@ -1,0 +1,10 @@
+[build]
+  command = "npm run build"
+  publish = "dist"
+
+# SPA fallback: serve index.html for any path so React Router handles routing.
+# (This is also provided by public/_redirects; kept here for clarity.)
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
